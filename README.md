@@ -2,7 +2,7 @@
 
 Análise de dados sobre prematuridade no Brasil usando bases SINASC e SIM.
 
-## Estrutura
+## Folders
 
 - **`f1_data-raw/`** - Dados brutos
 - **`f2_tabelas/`** - Tabelas finais
