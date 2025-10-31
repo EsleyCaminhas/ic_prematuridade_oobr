@@ -204,6 +204,16 @@ dados_aux <- dados_raw |>
     Termos =  case_when(
       SEMAGESTAC > 37 ~ 1,
       is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    IDADEMAE_menor_igual_15 = case_when(
+      IDADEMAE <= 15 ~ 1,
+      is.na(IDADEMAE) ~ NA,
+      TRUE ~ 0),
+    
+    IDADEMAE_maior_igual_35 = case_when(
+      IDADEMAE >= 35 ~ 1,
+      is.na(IDADEMAE) ~ NA,
       TRUE ~ 0)
     
     )
@@ -664,7 +674,14 @@ tabela_resumo_ano <- dados_aux |>
     # Partos termo precoce
     `Total de partos termo precoce (PTP)` = sum(Termos_precoce, na.rm = TRUE),
     `Total de partos termo precoce eletivos (PTPel)` = sum(PPel_termos_precoce, na.rm = TRUE),
-    `Total de partos termo precoce espontâneos (PTPes)` = sum(PPesp_termos_precoce, na.rm = TRUE)
+    `Total de partos termo precoce espontâneos (PTPes)` = sum(PPesp_termos_precoce, na.rm = TRUE),
+    
+    
+    # Idade materna
+    `Média de idade materna` = round(mean(IDADEMAE, na.rm = TRUE),2),
+    `Idade materna com  <= 15 anos` = sum(IDADEMAE_menor_igual_15, na.rm = TRUE),
+    `Idade materna com  >= 35 anos` = sum(IDADEMAE_maior_igual_35, na.rm = TRUE)
+    
   ) |>
   ungroup() |>
   arrange(ANO)
