@@ -1,0 +1,502 @@
+---
+title: "Análise temporal 2012-2023 - PPel e PPes"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
+```
+
+## Análise por RRAS
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(writexl)
+
+dados_raw <- fread("f1_data-raw/dados_SINASC.csv")
+
+# Filtrando e tratando os dados 
+dados_aux <- dados_raw |>
+  mutate(
+    
+    # STTRABPART (Trabalho de parto induzido?)
+    STTRABPART = case_when(
+      STTRABPART == 1 ~ "Sim",
+      STTRABPART == 2 ~ "Não",
+      STTRABPART == 3 ~ "Não se aplica",
+      STTRABPART == 9 ~ "Ignorado",
+      is.na(STTRABPART) ~ "NA"
+    ),
+    
+    # Tratamento da variável STCESPARTO (Cesárea antes do trabalho de parto?)
+    STCESPARTO = case_when(
+      STCESPARTO == 1 ~ "Sim",
+      STCESPARTO == 2 ~ "Não",
+      STCESPARTO == 3 ~ "Não se aplica",
+      STCESPARTO == 9 ~ "Ignorado",
+      is.na(STCESPARTO) ~ "NA"
+    ),
+    
+    RACACORMAE = case_when(
+      RACACORMAE == 1 ~ "Branca",
+      RACACORMAE == 2 ~ "Preta", 
+      RACACORMAE == 3 ~ "Amarela",
+      RACACORMAE == 4 ~ "Parda",
+      RACACORMAE == 5 ~ "Indígena",
+      RACACORMAE == 9 ~ "Ignorado",
+      is.na(RACACORMAE) ~ "NA"
+    ),
+    
+    ESCMAE2010 = case_when(
+      ESCMAE2010 == 0 ~ "Sem escolaridade",
+      ESCMAE2010 == 1 ~ "Fundamental I",
+      ESCMAE2010 == 2 ~ "Fundamental II",
+      ESCMAE2010 == 3 ~ "Médio",
+      ESCMAE2010 == 4 ~ "Superior incompleto",
+      ESCMAE2010 == 5 ~ "Superior completo",
+      ESCMAE2010 == 9 ~ "Ignorado",
+      is.na(ESCMAE2010) ~ "NA"
+    ),
+    
+    ESCMAE2010 = factor(ESCMAE2010, levels = c("Sem escolaridade", "Fundamental I", "Fundamental II", 
+                                               "Médio", "Superior incompleto", "Superior completo", "Ignorado", "NA")),
+    
+    ESTCIVMAE = case_when(
+      ESTCIVMAE %in% c(1,3,4) ~ "Solteira/Viúva/divorciada",
+      ESTCIVMAE %in% c(2,5) ~ "Casada/União estável",
+      ESTCIVMAE == 9 ~ "Ignorado",
+      is.na(ESTCIVMAE) ~ "NA"
+    ),
+    
+    GRAVIDEZ = case_when(
+      GRAVIDEZ == 1 ~ "Única",
+      GRAVIDEZ == 2 ~ "Dupla",
+      GRAVIDEZ == 3 ~ "Tripla e mais",
+      GRAVIDEZ == 9 ~ "Ignorado",
+      is.na(GRAVIDEZ) ~ "NA"
+    ),
+    GRAVIDEZ = factor(GRAVIDEZ, levels = c("Única", "Dupla", "Tripla e mais", "Ignorado", "NA")),
+    
+    QTDPARTCES = case_when(
+      QTDPARTCES == 0 ~ "0",
+      QTDPARTCES == 1 ~ "1",
+      QTDPARTCES > 1 & QTDPARTCES != 99 ~ "2 ou mais",
+      QTDPARTCES == 99 ~ "Ignorado",
+      is.na(QTDPARTCES) ~ "NA"
+    ),
+    QTDPARTCES = factor(QTDPARTCES, levels = c("0", "1", "2 ou mais", "Ignorado", "NA")),
+    
+    QTDFILMORT = case_when(
+      QTDFILMORT == 0 ~ "0",
+      QTDFILMORT == 1 ~ "1",
+      QTDFILMORT > 1 & QTDFILMORT != 99 ~ "2 ou mais",
+      QTDFILMORT == 99 ~ "Ignorado",
+      is.na(QTDFILMORT) ~ "NA"
+    ),
+    QTDFILMORT = factor(QTDFILMORT, levels = c("0", "1", "2 ou mais", "Ignorado", "NA")),
+    
+    QTDFILVIVO = case_when(
+      QTDFILVIVO == 0 ~ "0",
+      QTDFILVIVO == 1 ~ "1",
+      QTDFILVIVO > 1 & QTDFILVIVO != 99 ~ "2 ou mais",
+      QTDFILVIVO == 99 ~ "Ignorado",
+      is.na(QTDFILVIVO) ~ "NA"
+    ),
+    QTDFILVIVO = factor(QTDFILVIVO, levels = c("0", "1", "2 ou mais", "Ignorado", "NA")),
+    
+
+    N_ADEQUADO = case_when(
+      SEMAGESTAC >= 22 & SEMAGESTAC <= 25 ~ 2,
+      SEMAGESTAC >= 26 & SEMAGESTAC <= 29 ~ 3,
+      SEMAGESTAC >= 30 & SEMAGESTAC <= 33 ~ 4,
+      SEMAGESTAC >= 34 & SEMAGESTAC <= 35 ~ 5,
+      SEMAGESTAC >= 36 & SEMAGESTAC <= 37 ~ 6,
+      SEMAGESTAC >= 38 & SEMAGESTAC <= 39 ~ 7,
+      SEMAGESTAC >= 40 ~ 8,
+      SEMAGESTAC < 22 ~ NA
+    ),
+    
+    N_PRENAT = case_when(
+      CONSPRENAT >= N_ADEQUADO ~ "Adequado",
+      CONSPRENAT < N_ADEQUADO ~ "Inadequado",
+      is.na(CONSPRENAT) | is.na(N_ADEQUADO) ~ "NA"
+    ),
+    
+    ############################################################################
+    
+    ANO = DTNASC %% 10000,
+    
+    NV = 1,
+    
+    PP = case_when(
+      (SEMAGESTAC %in% 22:36 | GESTACAO %in% 2:4) & PESO > 500 ~ 1,
+      is.na(SEMAGESTAC) & is.na(GESTACAO) ~ NA,
+      TRUE ~ 0
+    ),
+    
+    # Prematuro espontâneo
+    PPesp = case_when(
+      # Prematuro sem trabalho de parto induzido e sem cesárea antes do trabalho de parto iniciar
+      PP == 1 & (STTRABPART == "Não" & STCESPARTO == "Não") ~ 1,
+      is.na(PP) | (is.na(STTRABPART) & STCESPARTO == "Não") | (STTRABPART == "Não" & is.na(STCESPARTO)) ~ NA,
+      TRUE ~ 0
+    ),
+    
+    PPesp_32_37 = case_when(
+      PPesp == 1 & (SEMAGESTAC %in% 32:36 | GESTACAO == 4) ~ 1,
+      is.na(PPesp) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    PPesp_28_31 = case_when(
+      PPesp == 1 & (SEMAGESTAC %in% 28:31 | GESTACAO == 3) ~ 1,
+      is.na(PPesp) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    PPesp_28_menos = case_when(
+      PPesp == 1 & (SEMAGESTAC %in% 22:27 | GESTACAO == 2) ~ 1,
+      is.na(PPesp) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    # Prematuro eletivo
+    PPel = case_when(
+      # Prematuro com trabalho de parto induzido ou com cesárea antes do trabalho de parto iniciar
+      PP == 1 & (STTRABPART == "Sim" | STCESPARTO == "Sim") ~ 1,
+      is.na(PP) | (is.na(STTRABPART) & STCESPARTO == "Não") | (STTRABPART == "Não" & is.na(STCESPARTO)) ~ NA,
+      TRUE ~ 0
+    ),
+    
+    PPel_32_37 = case_when(
+      PPel == 1 & (SEMAGESTAC %in% 32:36 | GESTACAO == 4) ~ 1,
+      is.na(PPel) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    PPel_28_31 = case_when(
+      PPel == 1 & (SEMAGESTAC %in% 28:31 | GESTACAO == 3) ~ 1,
+      is.na(PPel) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    PPel_28_menos = case_when(
+      PPel == 1 & (SEMAGESTAC %in% 22:27 | GESTACAO == 2) ~ 1,
+      is.na(PPel) | is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    Termos_precoce = case_when(
+      SEMAGESTAC %in% 37:38 ~ 1,
+      is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    PPesp_termos_precoce = case_when(
+      SEMAGESTAC %in% 37:38 & (STTRABPART == "Não" & STCESPARTO == "Não") ~ 1,
+      is.na(SEMAGESTAC) | (is.na(STTRABPART) & STCESPARTO == "Não") | (STTRABPART == "Não" & is.na(STCESPARTO)) ~ NA,
+      TRUE ~ 0),
+    
+    PPel_termos_precoce = case_when(
+      SEMAGESTAC %in% 37:38 & (STTRABPART == "Sim" | STCESPARTO == "Sim") ~ 1,
+      is.na(SEMAGESTAC) | (is.na(STTRABPART) & STCESPARTO == "Não") | (STTRABPART == "Não" & is.na(STCESPARTO)) ~ NA,
+      TRUE ~ 0),
+    
+    Termos =  case_when(
+      SEMAGESTAC > 37 ~ 1,
+      is.na(SEMAGESTAC) ~ NA,
+      TRUE ~ 0),
+    
+    IDADEMAE_menor_igual_15 = case_when(
+      IDADEMAE <= 15 ~ 1,
+      is.na(IDADEMAE) ~ NA,
+      TRUE ~ 0),
+    
+    IDADEMAE_maior_igual_35 = case_when(
+      IDADEMAE >= 35 ~ 1,
+      is.na(IDADEMAE) ~ NA,
+      TRUE ~ 0)
+    
+    )
+
+dados_rras <- fread("f1_data-raw/municípios_rras_sp.csv") |>
+  select(RRAS = `Macrorregiao de Saude`,
+         CODMUNRES = `Codigo Municipio`) |>
+  mutate(RRAS = factor(RRAS, 
+                       levels = c("RRAS1", "RRAS2", "RRAS3", "RRAS4", "RRAS5", 
+                                  "RRAS6", "RRAS7", "RRAS8", "RRAS9", "RRAS10",
+                                  "RRAS11", "RRAS12", "RRAS13", "RRAS14", "RRAS15",
+                                  "RRAS16", "RRAS17", "RRAS18", "RRAS19"),
+                       ordered = TRUE))
+
+dados_analise <- dados_aux |> 
+  full_join(dados_rras) |>
+  select(RRAS, ANO, NV, PP,
+         PPesp, 
+         PPel, 
+         Termos,
+         Termos_precoce) |>
+  filter(!is.na(RRAS)) |>
+  group_by(RRAS, ANO) |>
+  summarise(
+    `Total de nascidos vivos (NV) por residência` = sum(NV, na.rm = TRUE),
+    
+    `Total de partos prematuros (PP)` = sum(PP, na.rm = TRUE),
+    
+    `Total de PP eletivos (PPel)` = sum(PPel, na.rm = TRUE),
+    
+    `Total de PP espontâneos (PPes)` = sum(PPesp, na.rm = TRUE),
+
+  ) |>
+  mutate(
+    porc_PPel = `Total de PP eletivos (PPel)`/`Total de partos prematuros (PP)`,
+    porc_PPes = `Total de PP espontâneos (PPes)`/`Total de partos prematuros (PP)`
+  ) |>
+  ungroup() |>
+  arrange(RRAS, ANO)
+
+```
+
+```{r}
+#| label: graficos-tendencias
+#| fig-cap: "Séries temporais das porcentagens de partos prematuros por RRAS"
+library(trend)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(highcharter)
+
+dados_analise1 <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes)
+
+# Gráfico para Partos Eletivos
+highchart() |>
+  hc_add_series(dados_analise, 
+                type = "line",
+                hcaes(x = ANO, y = round(porc_PPel, 3), group = RRAS)) |>
+  hc_xAxis(title = list(text = "Ano")) |>
+  hc_yAxis(title = list(text = "Porcentagem")) |>
+  hc_title(text = "Porcentagem de partos eletivos dentre todos os partos prematuros") |>
+  hc_tooltip(shared = FALSE) |>
+  hc_exporting(enabled = TRUE)
+
+# Gráfico para Partos Espontâneos
+highchart() |>
+  hc_add_series(dados_analise, 
+                type = "line",
+                hcaes(x = ANO, y = round(porc_PPes, 3), group = RRAS)) |>
+  hc_xAxis(title = list(text = "Ano")) |>
+  hc_yAxis(title = list(text = "Porcentagem")) |>
+  hc_title(text = "Porcentagem de partos espontâneos dentre todos os partos prematuros") |>
+  hc_tooltip(shared = FALSE) |>
+  hc_exporting(enabled = TRUE)
+```
+
+```{r}
+#| label: tabela-tendencias
+#| tbl-cap: "Resultados do teste de Mann-Kendall para tendências temporais por RRAS"
+
+# Criar tabela com resultados para ambas as variáveis
+tabela_tendencias <- dados_analise1 |>
+  group_by(RRAS) |>
+  summarise(
+    # Teste para Partos Prematuros Eletivos
+    `Valor P - PPel` = round(mk.test(porc_PPel)$p.value, 5),
+    `Conclusão do teste - PPel` = case_when(
+      `Valor P - PPel` < 0.01 ~ "Altamente Significativa",
+      `Valor P - PPel` < 0.05 ~ "Significativa",
+      TRUE ~ "Não Significativa"
+    ),
+    `Direção - PPel` = ifelse(sens.slope(porc_PPel)$estimates > 0, "Crescente", "Decrescente"),
+    
+    # Teste para Partos Prematuros espontâneos
+    `Valor P - PPes` = round(mk.test(porc_PPes)$p.value, 5),
+    `Conclusão do teste - PPes` = case_when(
+      `Valor P - PPes` < 0.01 ~ "Altamente Significativa",
+      `Valor P - PPes` < 0.05 ~ "Significativa",
+      TRUE ~ "Não Significativa"
+    ),
+    `Direção - PPes` = ifelse(sens.slope(porc_PPes)$estimates > 0, "Crescente", "Decrescente"),
+    
+    .groups = 'drop'
+  )
+
+# Formatando a tabela com kable
+tabela_tendencias |>
+  kable()
+```
+
+## Somente as RRAS onde o teste foi significativo 
+
+```{r}
+sig_ppel <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  group_by(RRAS) |>
+  mutate(
+    test_ppel = mk.test(porc_PPel)$p.value,
+    test_ppes = mk.test(porc_PPes)$p.value
+  ) |>
+  filter(test_ppel < 0.05)
+  
+RRAS_sig_ppel <- as.character(unique(sig_ppel$RRAS))
+
+sig_ppes <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  group_by(RRAS) |>
+  mutate(
+    test_ppel = mk.test(porc_PPel)$p.value,
+    test_ppes = mk.test(porc_PPes)$p.value
+  ) |>
+  filter(test_ppes < 0.05)
+  
+RRAS_sig_ppes <- as.character(unique(sig_ppes$RRAS))
+```
+
+```{r}
+#| label: graficos-tendencias2
+#| fig-cap: "Séries temporais das porcentagens de partos prematuros por RRAS"
+library(highcharter)
+
+dados_analise1 <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  filter(RRAS %in% RRAS_sig_ppel)
+
+# Gráfico para Partos Eletivos
+highchart() |>
+  hc_add_series(dados_analise1, 
+                type = "line",
+                hcaes(x = ANO, y = round(porc_PPel, 3), group = RRAS)) |>
+  hc_xAxis(title = list(text = "Ano")) |>
+  hc_yAxis(title = list(text = "Porcentagem")) |>
+  hc_title(text = "Porcentagem de partos eletivos dentre todos os partos prematuros") |>
+  hc_tooltip(shared = FALSE) |>
+  hc_exporting(enabled = TRUE)
+
+# # Gráfico para Partos Espontâneos
+# highchart() |>
+#   hc_add_series(dados_analise1, 
+#                 type = "line",
+#                 hcaes(x = ANO, y = round(porc_PPes, 3), group = RRAS)) |>
+#   hc_xAxis(title = list(text = "Ano")) |>
+#   hc_yAxis(title = list(text = "Porcentagem")) |>
+#   hc_title(text = "Porcentagem de partos espontâneos dentre todos os partos prematuros") |>
+#   hc_tooltip(shared = FALSE) |>
+#   hc_exporting(enabled = TRUE)
+```
+
+```{r}
+#| label: tabela-tendencias2
+#| tbl-cap: "Resultados do teste de Mann-Kendall para tendências temporais por RRAS"
+library(trend)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+
+dados_analise3 <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  filter(RRAS %in% RRAS_sig_ppel)
+
+# Criar tabela com resultados para ambas as variáveis
+tabela_tendencias <- dados_analise3 |>
+  group_by(RRAS) |>
+  summarise(
+    # Teste para Partos Prematuros Eletivos
+    `Valor P - PPel` = round(mk.test(porc_PPel)$p.value, 5),
+    `Conclusão do teste - PPel` = case_when(
+      `Valor P - PPel` < 0.01 ~ "Altamente Significativa",
+      `Valor P - PPel` < 0.05 ~ "Significativa",
+      TRUE ~ "Não Significativa"
+    ),
+    `Direção - PPel` = ifelse(sens.slope(porc_PPel)$estimates > 0, "Crescente", "Decrescente"),
+    
+    # # Teste para Partos Prematuros espontâneos
+    # `Valor P - PPes` = round(mk.test(porc_PPes)$p.value, 5),
+    # `Conclusão do teste - PPes` = case_when(
+    #   `Valor P - PPes` < 0.01 ~ "Altamente Significativa",
+    #   `Valor P - PPes` < 0.05 ~ "Significativa",
+    #   TRUE ~ "Não Significativa"
+    # ),
+    # `Direção - PPes` = ifelse(sens.slope(porc_PPes)$estimates > 0, "Crescente", "Decrescente"),
+    
+    .groups = 'drop'
+  )
+
+# Formatando a tabela com kable
+tabela_tendencias |>
+  kable()
+```
+
+
+
+```{r}
+#| label: graficos-tendencias3
+#| fig-cap: "Séries temporais das porcentagens de partos prematuros por RRAS"
+library(highcharter)
+
+dados_analise1 <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  filter(RRAS %in% RRAS_sig_ppes)
+
+# # Gráfico para Partos Eletivos
+# highchart() |>
+#   hc_add_series(dados_analise1, 
+#                 type = "line",
+#                 hcaes(x = ANO, y = round(porc_PPel, 3), group = RRAS)) |>
+#   hc_xAxis(title = list(text = "Ano")) |>
+#   hc_yAxis(title = list(text = "Porcentagem")) |>
+#   hc_title(text = "Porcentagem de partos eletivos dentre todos os partos prematuros") |>
+#   hc_tooltip(shared = FALSE) |>
+#   hc_exporting(enabled = TRUE)
+
+# Gráfico para Partos Espontâneos
+highchart() |>
+  hc_add_series(dados_analise1,
+                type = "line",
+                hcaes(x = ANO, y = round(porc_PPes, 3), group = RRAS)) |>
+  hc_xAxis(title = list(text = "Ano")) |>
+  hc_yAxis(title = list(text = "Porcentagem")) |>
+  hc_title(text = "Porcentagem de partos espontâneos dentre todos os partos prematuros") |>
+  hc_tooltip(shared = FALSE) |>
+  hc_exporting(enabled = TRUE)
+```
+
+```{r}
+#| label: tabela-tendencias3
+#| tbl-cap: "Resultados do teste de Mann-Kendall para tendências temporais por RRAS"
+library(trend)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+
+dados_analise1 <- dados_analise |>
+  select(ANO, RRAS, porc_PPel, porc_PPes) |>
+  filter(RRAS %in% RRAS_sig_ppes)
+
+# Criar tabela com resultados para ambas as variáveis
+tabela_tendencias <- dados_analise1 |>
+  group_by(RRAS) |>
+  summarise(
+    # # Teste para Partos Prematuros Eletivos
+    # `Valor P - PPel` = round(mk.test(porc_PPel)$p.value, 5),
+    # `Conclusão do teste - PPel` = case_when(
+    #   `Valor P - PPel` < 0.01 ~ "Altamente Significativa",
+    #   `Valor P - PPel` < 0.05 ~ "Significativa",
+    #   TRUE ~ "Não Significativa"
+    # ),
+    # `Direção - PPel` = ifelse(sens.slope(porc_PPel)$estimates > 0, "Crescente", "Decrescente"),
+    
+    # Teste para Partos Prematuros espontâneos
+    `Valor P - PPes` = round(mk.test(porc_PPes)$p.value, 5),
+    `Conclusão do teste - PPes` = case_when(
+      `Valor P - PPes` < 0.01 ~ "Altamente Significativa",
+      `Valor P - PPes` < 0.05 ~ "Significativa",
+      TRUE ~ "Não Significativa"
+    ),
+    `Direção - PPes` = ifelse(sens.slope(porc_PPes)$estimates > 0, "Crescente", "Decrescente"),
+    
+    .groups = 'drop'
+  )
+
+# Formatando a tabela com kable
+tabela_tendencias |>
+  kable()
+```
